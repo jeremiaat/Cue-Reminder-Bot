@@ -1,6 +1,6 @@
 import { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
-import { format } from "date-fns";
+import { formatShortDate } from "../utils/date.utils.js";
 import {
   getUserReminders,
   getReminderById,
@@ -81,8 +81,7 @@ function buildListMessage(reminders: Array<{ id: number; message: string; remind
   const keyboard = new InlineKeyboard();
 
   reminders.forEach((r, i) => {
-    const date = new Date(r.remindAt);
-    const formatted = format(date, "MMM d · h:mm a");
+    const formatted = formatShortDate(new Date(r.remindAt));
     const repeatTag = r.repeat ? ` 🔁` : "";
 
     message += `${escapeHtml(r.message)}${repeatTag}\n`;
@@ -118,8 +117,7 @@ export async function doneHandler(ctx: Context) {
     let msg = `<b>✅ Complete</b>\n\n<i>Send /done &lt;ID&gt;</i>\n\n`;
 
     reminders.forEach((r, i) => {
-      const date = new Date(r.remindAt);
-      const formatted = format(date, "MMM d · h:mm a");
+      const formatted = formatShortDate(new Date(r.remindAt));
       msg += `${escapeHtml(r.message)}\n<i>${formatted}</i> · ID: <code>${r.id}</code>\n\n`;
     });
 
@@ -162,8 +160,7 @@ export async function deleteHandler(ctx: Context) {
     let msg = `<b>🗑 Delete</b>\n\n<i>Send /delete &lt;ID&gt;</i>\n\n`;
 
     reminders.forEach((r, i) => {
-      const date = new Date(r.remindAt);
-      const formatted = format(date, "MMM d · h:mm a");
+      const formatted = formatShortDate(new Date(r.remindAt));
       msg += `${escapeHtml(r.message)}\n<i>${formatted}</i> · ID: <code>${r.id}</code>\n\n`;
     });
 
@@ -204,8 +201,7 @@ export async function cancelReminderHandler(ctx: Context) {
     let msg = `<b>🚫 Cancel</b>\n\n<i>Send /cancel &lt;ID&gt;</i>\n\n`;
 
     reminders.forEach((r, i) => {
-      const date = new Date(r.remindAt);
-      const formatted = format(date, "MMM d · h:mm a");
+      const formatted = formatShortDate(new Date(r.remindAt));
       msg += `${escapeHtml(r.message)}\n<i>${formatted}</i> · ID: <code>${r.id}</code>\n\n`;
     });
 
