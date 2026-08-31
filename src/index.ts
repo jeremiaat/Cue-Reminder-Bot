@@ -2,14 +2,36 @@ import { bot, init } from "./bot.js";
 import { startScheduler } from "../services/scheduler.js";
 import { startHealthServer } from "./server.js";
 
-await init();
-
-// Keep the host's health checks satisfied (required on Render/Railway).
+// 1. Bind the health server FIRST so the host immediately sees the
+//    service as live. Never block this on network/DB calls, otherwise
+//    Render's health check fails and the deploy appears stuck.
 startHealthServer();
 
-// ── Start everything ──
-startScheduler(bot);
-bot.start();
+// Polling can throw (e.g. transient Telegram 409 if log polling was
+// interrupted elsewhere). Retry instead of letting the process die.
+async function startPolling() {
+  for (;;) {
+    try {
+      await bot.start();
+      return; // never returns normally while polling; only on stop
+    } catch (err) {
+      console.error("Polling error, restarting in 5s:", err);
+      await new Promise((r) => setTimeout(r, 5000));
+    }
+  }
+}
 
-console.log("🤖 Reminder Bot is running (long-polling)...");
-console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+// 2. Prepare the database (may take a moment on cold starts). Done in the
+//    background so a slow Turso connection can never stall the port.
+init()
+  .then(() => {
+    startScheduler(bot);
+    startPolling();
+    console.log("🤖 Reminder Bot is running (long-polling)...");
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  })
+  .catch((err) => {
+    console.error("Failed to initialize the bot:", err);
+    // Keep the process alive so the health server stays responsive;
+    // Render will restart the service if it keeps failing.
+  });
