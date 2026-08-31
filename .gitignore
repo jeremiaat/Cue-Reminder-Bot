@@ -1,0 +1,19 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+
+# environment / secrets
+.env
+.env.local
+.env.*.local
+
+# local database (dev fallback). In production you use a remote Turso DB.
+data/
+
+# drizzle
+*.log
+
+# test scratch files
+test-*.ts
