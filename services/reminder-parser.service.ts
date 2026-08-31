@@ -21,6 +21,46 @@ const COMMAND_FRAGMENTS = [
   "remind me at",
 ];
 
+// Common misspellings of date/time words. chrono-node doesn't understand
+// typos, so we correct them before parsing so users can type freely.
+const TYPO_FIXES: Array<[RegExp, string]> = [
+  [/\btommorrow\b/gi, "tomorrow"],
+  [/\btomorow\b/gi, "tomorrow"],
+  [/\btommorow\b/gi, "tomorrow"],
+  [/\btomoro\b/gi, "tomorrow"],
+  [/\btoday\b/gi, "today"],
+  [/\btmrw\b/gi, "tomorrow"],
+  [/\bto-night\b/gi, "tonight"],
+  [/\btnite\b/gi, "tonight"],
+  [/\bmonday\b/gi, "Monday"],
+  [/\btuesday\b/gi, "Tuesday"],
+  [/\bwednesday\b/gi, "Wednesday"],
+  [/\bthursday\b/gi, "Thursday"],
+  [/\bfriday\b/gi, "Friday"],
+  [/\bsaturday\b/gi, "Saturday"],
+  [/\bsunday\b/gi, "Sunday"],
+  [/\bjanuary\b/gi, "January"],
+  [/\bfebruary\b/gi, "February"],
+  [/\bmarch\b/gi, "March"],
+  [/\bapril\b/gi, "April"],
+  [/\bmay\b/gi, "May"],
+  [/\bjune\b/gi, "June"],
+  [/\bjuly\b/gi, "July"],
+  [/\baugust\b/gi, "August"],
+  [/\bseptember\b/gi, "September"],
+  [/\boctober\b/gi, "October"],
+  [/\bnovember\b/gi, "November"],
+  [/\bdecember\b/gi, "December"],
+];
+
+function normalizeTypos(text: string): string {
+  let fixed = text;
+  for (const [pattern, replacement] of TYPO_FIXES) {
+    fixed = fixed.replace(pattern, replacement);
+  }
+  return fixed;
+}
+
 function stripPrefix(text: string): string {
   let cleaned = text.trim();
   cleaned = cleaned.replace(PREFIX_PATTERN, "");
@@ -39,12 +79,15 @@ function normalizeText(text: string): string {
  * Parse a natural-language reminder message into a task and a reminder time.
  */
 export function parseReminder(text: string): ParsedReminder {
+  // Fix common typos first so chrono can recognize date/time words.
+  const normalized = normalizeTypos(text);
+
   // Parse with chrono using forward-date handling so relative times point forward.
-  const results = chrono.parse(text, new Date(), { forwardDate: true });
+  const results = chrono.parse(normalized, new Date(), { forwardDate: true });
   if (results.length === 0) {
     // No time expression found — but still try to extract a task phrase.
     return {
-      task: cleanTask(stripPrefix(normalizeText(text))),
+      task: cleanTask(stripPrefix(normalizeText(normalized))),
       remindAt: null,
       detectedTimeText: null,
     };
@@ -58,7 +101,7 @@ export function parseReminder(text: string): ParsedReminder {
   const detectLength = detect.length;
 
   // Reconstruct the task by removing the detected time span from the source.
-  const task = cleanTaskFromSource(text, detectStart, detectLength);
+  const task = cleanTaskFromSource(normalized, detectStart, detectLength);
   const detectedTimeText = detect;
 
   if (!date) {
@@ -97,6 +140,7 @@ function cleanTask(task: string): string {
     .replace(/^[,\-;:\s]+/, "")
     .replace(/[,\-;:]\s*$/, "")
     .replace(/\s+(?:on|at|for|in|by)\s*$/, "")
+    .replace(/\s+(?:at this time|this time|at the same time|the same time|same time)\s*$/i, "")
     .trim();
 
   return capitalize(cleaned);
