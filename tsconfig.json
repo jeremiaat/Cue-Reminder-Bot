@@ -9,10 +9,11 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
+    "types": ["node"],
 
     "forceConsistentCasingInFileNames": true
   },
 
-  "include": ["src", "db", "handlers", "services", "utils", "api", "scripts"],
+  "include": ["src", "db", "handlers", "services", "utils", "scripts"],
   "exclude": ["node_modules", "dist"]
 }

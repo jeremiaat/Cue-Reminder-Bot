@@ -6,7 +6,7 @@
   "main": "dist/src/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts",
+    "start": "npm run build && node dist/src/index.js",
     "build": "tsc",
     "start:prod": "node dist/src/index.js",
     "webhook:set": "tsx scripts/set-webhook.ts",
@@ -33,7 +33,6 @@
   },
   "devDependencies": {
     "@types/node": "^26.4.0",
-    "@vercel/node": "^10.0.0",
     "drizzle-kit": "^0.31.10",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2"
