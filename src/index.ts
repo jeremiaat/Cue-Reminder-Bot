@@ -24,7 +24,16 @@ async function startPolling() {
 // 2. Prepare the database (may take a moment on cold starts). Done in the
 //    background so a slow Turso connection can never stall the port.
 init()
-  .then(() => {
+  .then(async () => {
+    // Telegram allows either a webhook or long-polling, never both. Delete
+    // any leftover webhook so long-polling always wins cleanly and the bot
+    // can't be silenced by a stale webhook URL.
+    try {
+      await bot.api.deleteWebhook({ drop_pending_updates: true });
+    } catch (err) {
+      console.error("Failed to clear webhook:", err);
+    }
+
     startScheduler(bot);
     startPolling();
     console.log("🤖 Reminder Bot is running (long-polling)...");
