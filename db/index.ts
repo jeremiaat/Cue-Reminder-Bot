@@ -13,6 +13,9 @@ const url =
 const client = createClient({
   url,
   authToken: process.env.TURSO_AUTH_TOKEN,
+  // Fail fast if the DB is hibernating or unreachable — default timeout is
+  // very long and causes init() to hang on cold Vercel instances.
+  timeout: 10,
 });
 
 export const db = drizzle(client, { schema });
