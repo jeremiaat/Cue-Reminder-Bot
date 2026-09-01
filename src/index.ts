@@ -42,7 +42,8 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url ?? "/", "http://localhost");
 
-    if (url.pathname === "/api/webhook" && req.method === "POST") {
+    // POST / or POST /api/webhook -> Telegram update
+    if (req.method === "POST" && (url.pathname === "/" || url.pathname === "/api/webhook")) {
       if (!ready) {
         res.writeHead(503).end(
           JSON.stringify({ ok: false, error: "starting", initError })
@@ -50,7 +51,11 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const body = await readBody(req);
-      await bot.handleUpdate(JSON.parse(body));
+      const parsed = JSON.parse(body);
+      // Only process if it looks like a Telegram update (has update_id).
+      if (parsed.update_id != null) {
+        await bot.handleUpdate(parsed);
+      }
       res.writeHead(200).end(JSON.stringify({ ok: true }));
       return;
     }
