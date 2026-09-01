@@ -14,15 +14,29 @@ import { setBotInstance, processDueReminders } from "../services/scheduler.js";
 let ready = false;
 let initError: string | null = null;
 
-// If the DB/deps take too long, surface a reason instead of hanging on
-// 503 "starting" forever (e.g. missing Turso auth token stalls the client).
-const INIT_TIMEOUT = 20000;
-setTimeout(() => {
-  if (!ready && !initError) {
-    initError = "init timed out after 20s (check TURSO_DB/AUTH env)";
-    console.error(initError);
+// Retry init with backoff — Turso free-tier DBs hibernate after inactivity
+// and the first connection attempt often times out while it wakes up.
+async function tryInit(attempt: number): Promise<void> {
+  try {
+    await init();
+    setBotInstance(bot);
+    ready = true;
+    console.log("🤖 Reminder Bot ready");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`Init attempt ${attempt} failed: ${msg}`);
+    if (attempt < 5) {
+      const delay = Math.min(3000 * attempt, 15000);
+      console.log(`Retrying in ${delay / 1000}s...`);
+      await new Promise((r) => setTimeout(r, delay));
+      await tryInit(attempt + 1);
+    } else {
+      initError = msg;
+      console.error("Failed to initialize after 5 attempts:", err);
+    }
   }
-}, INIT_TIMEOUT);
+}
+tryInit(1);
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -81,18 +95,6 @@ const port = Number(process.env.PORT) || 3000;
 server.listen(port, () => {
   console.log(`🩺 Health server listening on port ${port}`);
 });
-
-init()
-  .then(() => {
-    setBotInstance(bot);
-    ready = true;
-    console.log("🤖 Reminder Bot ready");
-  })
-  .catch((err) => {
-    initError = err instanceof Error ? err.message : String(err);
-    console.error("Failed to initialize the bot:", err);
-    // Don't crash — health endpoint stays up and reports initError.
-  });
 
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
