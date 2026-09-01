@@ -14,6 +14,16 @@ import { setBotInstance, processDueReminders } from "../services/scheduler.js";
 let ready = false;
 let initError: string | null = null;
 
+// If the DB/deps take too long, surface a reason instead of hanging on
+// 503 "starting" forever (e.g. missing Turso auth token stalls the client).
+const INIT_TIMEOUT = 20000;
+setTimeout(() => {
+  if (!ready && !initError) {
+    initError = "init timed out after 20s (check TURSO_DB/AUTH env)";
+    console.error(initError);
+  }
+}, INIT_TIMEOUT);
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -57,6 +67,8 @@ const server = http.createServer(async (req, res) => {
         ready,
         initError,
         dbUrl: process.env.TURSO_DATABASE_URL ? "set" : "MISSING",
+        dbAuth: process.env.TURSO_AUTH_TOKEN ? "set" : "MISSING",
+        cronSecret: process.env.CRON_SECRET ? "set" : "MISSING",
       })
     );
   } catch (err) {
