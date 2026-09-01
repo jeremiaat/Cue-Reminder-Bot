@@ -1,17 +1,79 @@
 import http from "node:http";
+import { bot, init } from "./bot.js";
+import { setBotInstance, processDueReminders } from "../services/scheduler.js";
 
-// Minimal Node server entrypoint for Vercel's Node.js builder.
+// Node.js server entrypoint (Vercel's Node builder runs this via "main").
+// This single process handles everything:
+//   POST /api/webhook -> Telegram webhook updates
+//   GET/POST /api/cron -> fire due reminders (external cron-jobs.org)
+//   any other path    -> health check
 //
-// This project is serverless: Telegram updates are handled by api/webhook.ts
-// and reminders are fired by api/cron.ts. Vercel requires an entrypoint when
-// the Framework Preset is Node.js; this satisfies that requirement with a
-// tiny health endpoint so the route doesn't 500. It does NOT long-poll.
-const server = http.createServer((_req, res) => {
-  res.writeHead(200, { "Content-Type": "application/json" });
-  res.end(JSON.stringify({ ok: true, bot: "cue-reminder-bot" }));
+// The health server binds IMMEDIATELY so the host always sees the port.
+// DB init happens in the background — a slow Turso call must never block
+// the listener.
+let ready = false;
+
+const server = http.createServer(async (req, res) => {
+  try {
+    const url = new URL(req.url ?? "/", "http://localhost");
+
+    if (url.pathname === "/api/webhook" && req.method === "POST") {
+      if (!ready) {
+        res.writeHead(503).end(JSON.stringify({ ok: false, error: "starting" }));
+        return;
+      }
+      const body = await readBody(req);
+      await bot.handleUpdate(JSON.parse(body));
+      res.writeHead(200).end(JSON.stringify({ ok: true }));
+      return;
+    }
+
+    if (url.pathname === "/api/cron") {
+      if (!ready) {
+        res.writeHead(503).end(JSON.stringify({ ok: false, error: "starting" }));
+        return;
+      }
+      const secret = process.env.CRON_SECRET;
+      if (secret && req.headers.authorization !== `Bearer ${secret}`) {
+        res.writeHead(401).end(JSON.stringify({ ok: false, error: "Unauthorized" }));
+        return;
+      }
+      const fired = await processDueReminders();
+      res.writeHead(200).end(JSON.stringify({ ok: true, fired }));
+      return;
+    }
+
+    // Everything else is a health check.
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: true, bot: "cue-reminder-bot" }));
+  } catch (err) {
+    console.error("Request error:", err);
+    res.writeHead(500).end(JSON.stringify({ ok: false, error: "internal" }));
+  }
 });
 
 const port = Number(process.env.PORT) || 3000;
 server.listen(port, () => {
   console.log(`🩺 Health server listening on port ${port}`);
 });
+
+init()
+  .then(() => {
+    setBotInstance(bot);
+    ready = true;
+    console.log("🤖 Reminder Bot ready");
+  })
+  .catch((err) => {
+    console.error("Failed to initialize the bot:", err);
+  });
+
+function readBody(req: http.IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let data = "";
+    req.on("data", (chunk) => {
+      data += chunk;
+    });
+    req.on("end", () => resolve(data));
+    req.on("error", reject);
+  });
+}
