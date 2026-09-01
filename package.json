@@ -1,12 +1,14 @@
 {
   "name": "cue-reminder-bot",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "A Telegram reminder bot with natural-language parsing and inline confirmation.",
   "type": "module",
-  "main": "src/index.ts",
+  "main": "dist/src/index.js",
   "scripts": {
-    "dev": "vercel dev",
+    "dev": "tsx watch src/index.ts",
+    "start": "npm run build && node dist/src/index.js",
     "build": "tsc",
+    "start:prod": "node dist/src/index.js",
     "webhook:set": "tsx scripts/set-webhook.ts",
     "webhook:delete": "tsx scripts/delete-webhook.ts",
     "db:generate": "drizzle-kit generate",
@@ -31,7 +33,6 @@
   },
   "devDependencies": {
     "@types/node": "^26.4.0",
-    "@vercel/node": "^10.0.0",
     "drizzle-kit": "^0.31.10",
     "tsx": "^4.23.13",
     "typescript": "^5.9.3"
