@@ -48,8 +48,8 @@ export async function processDueReminders(): Promise<number> {
 
       await botInstance.api.sendMessage(
         user.telegramId,
-        `⏰ <b>Reminder</b>${repeatLabel}\n\n` +
-          `<blockquote>${escapeHtml(reminder.message)}</blockquote>\n\n` +
+          `⏰ <b>Reminder</b>${repeatLabel}\n\n` +
+          `<blockquote><b>${escapeHtml(reminder.message)}</b></blockquote>\n\n` +
           `<i>Tap /done when finished</i>`,
         { parse_mode: "HTML" }
       );
