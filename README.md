@@ -15,18 +15,19 @@ Built with **grammY**, **chrono-node**, **Drizzle ORM**, and **Turso** (hosted S
 
 ## 🏗 Architecture
 
-- **Long-polling**: the bot runs as a persistent Node.js process. This is how Telegram updates are received — the app must stay online.
-- **Scheduler**: a per-minute in-process job scans for due reminders and sends them. Because it lives inside the running process, it works on **free** hosting plans (no paid cron needed).
-- **Health server**: a tiny HTTP server on `$PORT` keeps Render's health checks happy and self-pings every 5 minutes to prevent Render's free tier from sleeping after 15 minutes of inactivity.
+- **Webhook-based**: Telegram pushes updates to `POST /api/webhook`. No long-polling process, so no `getUpdates` conflict (409) and no always-on server.
+- **External cron**: [cron-jobs.org](https://cron-jobs.org) (or any ping service) calls `POST /api/cron` every minute to fire due reminders. Serverless functions sleep between pings, so the cron ping both wakes the function and fires reminders.
 - **Database**: [Turso](https://turso.tech) (hosted libSQL). Tables are **auto-created on startup** — no manual migration needed.
+- **Timezone**: all displayed times are formatted in `Africa/Addis_Ababa` (UTC+3); times are stored as UTC.
 
-> This project runs as an **always-on** bot (not serverless). The local `data/` SQLite file is only a development fallback.
+> This is a **serverless** deployment, not an always-on process.
 
 ## 📋 Requirements
 
 - Node.js 18+
 - A Telegram bot token from [@BotFather](https://t.me/BotFather)
 - A free [Turso](https://turso.tech) database
+- A Vercel account
 
 ## 🚀 Local Development
 
@@ -35,14 +36,12 @@ cp .env.example .env
 # fill in BOT_TOKEN (TURSO_* can be left empty locally — it uses data/reminders.db)
 
 npm install
-npm run dev        # long-polling + per-minute scheduler + health server
+npm run dev        # runs Vercel dev server exposing /api/webhook + /api/cron
 ```
 
 Try it: send your bot *"Buy groceries tomorrow at 5 PM"*, tap **✅ Confirm**, then check `/list` and `/stats`.
 
-## ☁️ Deploy on Render (free)
-
-The bot runs as an always-on Render **web service**. Reminders fire from an in-process scheduler, and a self-ping keeps the free instance from sleeping.
+## ☁️ Deploy on Vercel (free)
 
 ### 1. Create the Turso database
 
@@ -57,52 +56,61 @@ Grab the database URL (format `libsql://<db>-<org>.turso.io`) and the token from
 ### 2. Push to GitHub
 
 ```bash
-git add -A && git commit -m "Prepare for Render deployment"
+git add -A && git commit -m "Deploy bot to Vercel"
 git push -u origin main
 ```
 
-### 3. Deploy on Render
+### 3. Deploy on Vercel
 
-1. On [render.com](https://render.com), click **New → Web Service**, connect your GitHub repo, and choose this repo.
-2. Render auto-detects Node. Set these **environment variables**:
+1. On [vercel.com](https://vercel.com), click **Add New → Project**, connect your GitHub repo.
+2. Vercel auto-detects the framework and builds. Set these **environment variables** (Settings → Environment Variables):
 
    | Variable | Value |
    | --- | --- |
    | `BOT_TOKEN` | Your token from @BotFather |
    | `TURSO_DATABASE_URL` | Your Turso URL |
    | `TURSO_AUTH_TOKEN` | Your Turso auth token |
+   | `CRON_SECRET` | Any long random string (used to guard `/api/cron`) |
 
-3. Confirm the settings (a `render.yaml` blueprint is also included in the repo):
+3. Deploy. You'll get a URL like `https://<project>.vercel.app`.
 
-   - **Build command:** `npm install && npm run build`
-   - **Start command:** `npm run start:prod`
-   - **Health check path:** `/` (Render pings this)
-   - **Instance type:** Free
+### 4. Register the Telegram webhook
 
-4. Deploy. Check the logs for `🤖 Reminder Bot is running (long-polling)...` and `🩺 Health server listening on port 10000`.
+```bash
+WEBHOOK_URL=https://<project>.vercel.app/api/webhook npm run webhook:set
+```
 
-> **Important:** with long-polling you do **not** set a webhook. If a webhook is already configured, clear it once with `npm run webhook:delete`.
+Verify: the `/api/webhook` endpoint returns `{"ok":true}` when Telegram pings it.
+
+### 5. Set up the external cron (cron-jobs.org)
+
+1. Create a **free account** at [cron-jobs.org](https://cron-jobs.org).
+2. **Create cronjob**:
+   - URL: `https://<project>.vercel.app/api/cron`
+   - Method: `POST` (or GET)
+   - **Headers** (optional, recommended): `Authorization: Bearer <CRON_SECRET>`
+   - Schedule: **every minute** (`* * * * *`)
+3. Save and enable it. This is what fires your reminders.
+
+> The cron ping keeps Vercel's serverless function warm and triggers reminder delivery every minute.
 
 ## ✅ Verify it works
 
 1. Message your bot: *"Buy groceries tomorrow at 5 PM"* → tap **✅ Confirm** → it should reply "I'll remind you then."
 2. `/list` should show the reminder.
-3. Add a quick one: *"test in 1 minute"* → confirm → wait ~60s. The bot should send you the reminder (watch Render logs for `⏰ Fired reminder`).
+3. Add a quick one: *"test in 1 minute"* → confirm → within a minute the cron job triggers delivery. You should get the reminder (watch Vercel logs for `⏰ Fired reminder`).
 
 ## 🐞 Troubleshooting
 
-- **Bot doesn't reply**: check Render logs. Ensure `BOT_TOKEN` is set.
-- **Reminders don't fire**: confirm the process stays up and `TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN` are set so the scheduler can read the DB.
-- **Service shows unhealthy**: it must bind `$PORT`. The health server does this automatically.
-- **`404` / webhook conflict**: run `npm run webhook:delete` to ensure no webhook is configured.
-- **Local dev uses the wrong DB**: leave `TURSO_DATABASE_URL` unset locally.
+- **Bot doesn't reply**: check Vercel function logs (`/api/webhook`). Ensure `BOT_TOKEN` is set and the webhook is registered (`npm run webhook:set`).
+- **Reminders don't fire**: confirm the cron job is enabled and `CRON_SECRET` (if set) is passed as a header. Check `/api/cron` returns `{"ok":true,"fired":N}`.
+- **`409` conflict**: this happened with the old long-polling setup. With webhook + serverless there is no long-polling, so it can't recur. If it does, run `npm run webhook:delete` and re-register.
 
 ## 📜 Scripts
 
 | Script | Purpose |
 | --- | --- |
-| `npm run dev` | Local long-polling + scheduler + health server |
-| `npm start` | Build + run the bot |
-| `npm run build` | Compile TypeScript to `dist/` |
-| `npm run start:prod` | Run the compiled bot (Render start command) |
-| `npm run webhook:delete` | Clear a leftover Telegram webhook |
+| `npm run dev` | Run the Vercel dev server (local) |
+| `npm run build` | Compile TypeScript to `dist/` (validation) |
+| `npm run webhook:set` | Register the Telegram webhook (needs `WEBHOOK_URL`) |
+| `npm run webhook:delete` | Clear the Telegram webhook |
