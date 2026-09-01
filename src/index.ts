@@ -12,6 +12,7 @@ import { setBotInstance, processDueReminders } from "../services/scheduler.js";
 // DB init happens in the background — a slow Turso call must never block
 // the listener.
 let ready = false;
+let initError: string | null = null;
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -19,7 +20,9 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/webhook" && req.method === "POST") {
       if (!ready) {
-        res.writeHead(503).end(JSON.stringify({ ok: false, error: "starting" }));
+        res.writeHead(503).end(
+          JSON.stringify({ ok: false, error: "starting", initError })
+        );
         return;
       }
       const body = await readBody(req);
@@ -30,7 +33,9 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/cron") {
       if (!ready) {
-        res.writeHead(503).end(JSON.stringify({ ok: false, error: "starting" }));
+        res.writeHead(503).end(
+          JSON.stringify({ ok: false, error: "starting", initError })
+        );
         return;
       }
       const secret = process.env.CRON_SECRET;
@@ -45,7 +50,15 @@ const server = http.createServer(async (req, res) => {
 
     // Everything else is a health check.
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ ok: true, bot: "cue-reminder-bot" }));
+    res.end(
+      JSON.stringify({
+        ok: true,
+        bot: "cue-reminder-bot",
+        ready,
+        initError,
+        dbUrl: process.env.TURSO_DATABASE_URL ? "set" : "MISSING",
+      })
+    );
   } catch (err) {
     console.error("Request error:", err);
     res.writeHead(500).end(JSON.stringify({ ok: false, error: "internal" }));
@@ -64,7 +77,9 @@ init()
     console.log("🤖 Reminder Bot ready");
   })
   .catch((err) => {
+    initError = err instanceof Error ? err.message : String(err);
     console.error("Failed to initialize the bot:", err);
+    // Don't crash — health endpoint stays up and reports initError.
   });
 
 function readBody(req: http.IncomingMessage): Promise<string> {
